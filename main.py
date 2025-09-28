@@ -425,6 +425,5 @@ class Catsu:
         ]
         
         cmd = "".join(cmd)
-        print(cmd)
         
         return self.send_command(cmd=cmd)
