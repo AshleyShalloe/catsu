@@ -59,6 +59,8 @@ class Catsu:
         Returns the result as a dictionary with
         the command and parameter as strings.
         """
+        assert cmd[-1] == ";", f"Missing terminator: {cmd}"
+        
         res = []
 
         with serial.Serial() as ser:
@@ -288,7 +290,7 @@ class Catsu:
     def read_date_and_time(self):
         """
         I'm not convinced this returns the current clock.
-        
+
         I think it returns the time the clock was set to, and
         perhaps the difference from this is calculated internally.
         """
@@ -302,7 +304,7 @@ class Catsu:
         """
         Sets the date and time based on the current computer
         clock. Doesn't take any user input.
-        
+
         Forces the clock to UTC-0
         """
         set_date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
@@ -313,3 +315,116 @@ class Catsu:
         self.send_command(cmd="DT2+0000;")
 
         return
+
+    def set_repeater_shift(self, *, band=None, shift=None):
+        """
+        Sets the repeater shift in the MENU/SETUP thing
+        Not the same as the "shift" setting in F/M-LIST
+
+        Seemingly has to be set for an entire band, rather
+        than per memory? Awkward if different repeaters on
+        the same band use different shifts. Which they do.
+
+        It might be the case that you can use split frequency
+        instead for repeaters, which would mitigate the
+        issue...
+        """
+        band_code_dict = {
+            "28": "080",  ## 0000 to 1000
+            "50": "081",  ## 0000 to 4000
+            "144": "082",  ## 0000 to 4000
+            "430": "083",  ## 0000 to 10000
+        }
+
+        ## 10kHz/step
+
+        bandcode = band_code_dict[band]
+
+        assert isinstance(shift, int)
+        assert (shift >= 0) and (shift <= 10000)
+
+        return self.send_command(cmd=f"EX{bandcode}{str(shift).zfill(4)};")
+    
+    def __rightpad(self, str, char, length):
+        return_str = str
+        
+        if len(str) > length:
+            raise Exception(f"{str} is longer than {length} characters")
+        
+        assert len(char) == 1
+        
+        while len(return_str) < length:
+            return_str = f"{return_str}{char}"
+            
+        return return_str
+    
+    def read_memory_channel_and_tag(self, *, channel=None):
+        return self.read_cmd(cmd=f"MT{str(channel).zfill(3)};")
+
+    def write_and_tag_memory_channel(
+        self,
+        *,
+        channel: int,
+        vfo: int,
+        clarifierDirection: str,
+        clarifierOffset: int,
+        rxClarifierOn: int,
+        txClarifierOn: int,
+        mode: str,
+        ctcssDcs: int,
+        simplexOrShift: int,
+        tag: str,
+    ):
+        """
+        Params
+        ------
+        channel:
+            001-117 memory channel number
+        vfo:
+            VFO-A frequency in Hz
+        clarifierDirection:
+            + or - for plus or minus shift
+            must be set...
+        clarifierOffset:
+            0000 to 9999 Hz
+        rxClarifierOn:
+            0 off 1 on
+        txClarifierOn:
+            0 off 1 on
+        mode:
+            for example, LSB or FM
+        ctcssDcs:
+            0 CTCSS OFF
+            1 CTCSS ENC/DEC
+            2 CTCSS ENC
+            3 DCS ENC/DEC
+            4 DCS ENC
+        simplexOrShift
+            0 simplex
+            1 plus shift
+            2 minus shift
+        tag
+            up to 12 ASCII characters
+        """
+        cmd = [
+            "MT",
+            str(channel).zfill(3), ## channel
+            str(vfo), ## VFO-A freq
+            clarifierDirection, ## clarifier direction
+            str(clarifierOffset).zfill(4), ## clarifier offset
+            str(rxClarifierOn),
+            str(txClarifierOn),
+            self.modes_dict[mode],
+            "1", ## always 1 for setting memory
+            str(ctcssDcs),
+            "00", ## always 00
+            str(simplexOrShift),
+            "0",
+            self.__rightpad(tag, " ", 12),
+            ";"
+        ]
+        
+        cmd = "".join(cmd)
+        print(cmd)
+        
+        return self.send_command(cmd=cmd)
